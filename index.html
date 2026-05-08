@@ -1,0 +1,2152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ghost Arb Bot — Automated Arbitrage Alerts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --space-xs: 6px;
+    --space-sm: 12px;
+    --space-md: 20px;
+    --space-lg: 32px;
+    --space-xl: 48px;
+    --bg: #040307;
+    --bg2: #090612;
+    --surface: rgba(18,13,34,0.86);
+    --surface2: rgba(28,18,52,0.9);
+    --surface-hover: rgba(34,23,64,0.94);
+    --border: rgba(116,86,200,0.33);
+    --border-bright: rgba(150,115,248,0.48);
+    --accent: #b388ff;
+    --accent-dim: rgba(179,136,255,0.14);
+    --accent-glow: rgba(179,136,255,0.24);
+    --purple: #8b5cf6;
+    --purple-dim: rgba(139,92,246,0.16);
+    --warn: #ffb300;
+    --danger: #f44336;
+    --text: #e2e8f4;
+    --text2: #a0aec0;
+    --muted: #64748b;
+    --gold: #f7c948;
+    --radius: 14px;
+    --radius-lg: 20px;
+    --shadow: 0 4px 32px rgba(0,0,0,0.4);
+    --shadow-accent: 0 0 40px rgba(0,230,118,0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: #000000;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+
+  /* ── SPACE SCENE (trial background) ── */
+  .space-scene {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background: radial-gradient(ellipse at bottom, #1a002a 0%, #000000 100%);
+  }
+
+  /* Procedural stars (filled by JS): layered parallax drift */
+  .space-scene .star-field {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 200%;
+    height: 200%;
+    pointer-events: none;
+    animation: spaceMoveStars linear infinite;
+  }
+
+  .space-scene .star-field--back { animation-duration: 145s; }
+  .space-scene .star-field--mid { animation-duration: 98s; }
+  .space-scene .star-field--front { animation-duration: 64s; }
+
+  .space-scene .star-dot {
+    position: absolute;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  @keyframes spaceMoveStars {
+    from { transform: translateY(0); }
+    to { transform: translateY(-1000px); }
+  }
+
+  @keyframes starTwinkle {
+    0%, 100% { opacity: var(--tw-lo, 0.4); }
+    50% { opacity: var(--tw-hi, 0.95); }
+  }
+
+  .space-scene .star-dot.is-twinkle {
+    animation: starTwinkle var(--tw-dur, 4s) ease-in-out infinite;
+  }
+
+  /* Trajectory + timing set per star in JS (--shoot-angle, --shoot-dx/y, --shoot-dur, …) */
+  .space-scene .shooting-star {
+    position: absolute;
+    z-index: 1;
+    width: 2px;
+    height: var(--shoot-len, 80px);
+    top: var(--shoot-top, 12%);
+    left: var(--shoot-left, 50%);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0));
+    opacity: 0;
+    border-radius: 2px;
+    transform: rotate(calc(var(--shoot-angle, 45deg) - 90deg));
+    animation: spaceShootVar var(--shoot-dur, 6s) linear infinite;
+    animation-delay: var(--shoot-delay, 0s);
+    will-change: transform, opacity;
+  }
+
+  @keyframes spaceShootVar {
+    0% {
+      transform: translate(0, 0) rotate(calc(var(--shoot-angle, 45deg) - 90deg));
+      opacity: 0;
+    }
+    8% {
+      opacity: 1;
+    }
+    100% {
+      transform: translate(var(--shoot-dx, -240px), var(--shoot-dy, 240px))
+        rotate(calc(var(--shoot-angle, 45deg) - 90deg));
+      opacity: 0;
+    }
+  }
+
+  /* Rockets: spawned by JS (edge entry, up to 7). Nose up in SVG; skin rotates with --flight-deg. */
+  .rockets-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    overflow: visible;
+  }
+
+  .space-scene .rocket {
+    position: absolute;
+    --flight-deg: 0;
+    --flight-dist: 150vmax;
+    --flight-duration: 12s;
+    width: 60px;
+    left: 0;
+    top: 0;
+  }
+
+  .space-scene .rocket.is-flying {
+    animation: spaceFlyPath var(--flight-duration) linear forwards;
+  }
+
+  .space-scene .rocket-skin {
+    transform: rotate(calc(var(--flight-deg) * 1deg - 270deg));
+    transform-origin: 50% 50%;
+  }
+
+  .space-scene .rocket svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  @keyframes spaceFlyPath {
+    from {
+      transform: translate(0, 0);
+    }
+    to {
+      transform: translate(
+        calc(cos(var(--flight-deg) * 1deg) * var(--flight-dist)),
+        calc(sin(var(--flight-deg) * 1deg) * var(--flight-dist))
+      );
+    }
+  }
+
+  .container {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 200;
+    padding: 0;
+  }
+  .nav-inner {
+    max-width: 1080px;
+    margin: 14px auto;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(10,13,20,0.75);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+  }
+  .nav-logo {
+    display: flex; align-items: center; gap: 10px;
+    text-decoration: none; color: var(--text);
+  }
+  .nav-logo-img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(18, 13, 34, 0.6);
+    flex-shrink: 0;
+  }
+  .nav-logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+  .nav-logo-text span { color: var(--accent); }
+  .nav-links {
+    display: flex; align-items: center; gap: 6px;
+    list-style: none;
+  }
+  .nav-links a {
+    color: var(--text2);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  .nav-links a:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+  .nav-links a:focus-visible,
+  .nav-dash:focus-visible,
+  .btn:focus-visible,
+  .btn-telegram:focus-visible,
+  .stats-retry:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+  .nav-cta {
+    background: var(--accent) !important;
+    color: #000 !important;
+    font-weight: 700 !important;
+    padding: 7px 16px !important;
+  }
+  .nav-cta:hover { background: #00c853 !important; }
+  .nav-dash {
+    background: var(--purple) !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    padding: 7px 14px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+    text-decoration: none !important;
+    transition: opacity 0.2s !important;
+  }
+  .nav-dash:hover { opacity: 0.85 !important; }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 118px 0 80px;
+    text-align: center;
+    position: relative;
+    z-index: 1;
+    isolation: isolate;
+  }
+  .hero-brand-logo {
+    display: block;
+    position: relative;
+    z-index: 1;
+    width: min(280px, 68vw);
+    height: auto;
+    margin: 0 auto 14px;
+    object-fit: contain;
+    filter: drop-shadow(0 10px 28px rgba(139, 92, 246, 0.55)) drop-shadow(0 0 20px rgba(255, 255, 255, 0.08));
+    animation: fadeUp 0.5s 0.04s ease both;
+  }
+
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent-dim);
+    border: 1px solid rgba(0,230,118,0.25);
+    padding: 6px 16px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    color: var(--accent);
+    margin-bottom: 28px;
+    animation: fadeUp 0.5s ease both;
+    letter-spacing: 0.5px;
+  }
+  .hero-dot {
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.8)} }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)} }
+  @keyframes fadeIn { from{opacity:0}to{opacity:1} }
+
+  .hero h1 {
+    font-size: clamp(38px, 6vw, 68px);
+    font-weight: 900;
+    line-height: 1.08;
+    letter-spacing: -2px;
+    margin-bottom: 22px;
+    animation: fadeUp 0.5s 0.08s ease both;
+  }
+  .hero h1 .highlight {
+    background: linear-gradient(135deg, var(--accent), #00b0ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero-sub {
+    font-size: 17px;
+    color: var(--text2);
+    max-width: 560px;
+    margin: 0 auto 36px;
+    line-height: 1.75;
+    font-weight: 400;
+    animation: fadeUp 0.5s 0.16s ease both;
+  }
+  .hero-actions {
+    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+    animation: fadeUp 0.5s 0.24s ease both;
+    margin-bottom: 56px;
+  }
+  .btn {
+    padding: 13px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+    display: inline-flex; align-items: center; gap: 8px;
+    border: none;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,230,118,0.3); background: #00f083; }
+  .btn-secondary {
+    background: rgba(255,255,255,0.06);
+    color: var(--text);
+    border: 1px solid var(--border-bright);
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,0.1); transform: translateY(-1px); }
+
+  /* ── LIVE STATS — HERO SECTION ── */
+  .stats-hero {
+    animation: fadeUp 0.5s 0.32s ease both;
+    margin-bottom: 60px;
+  }
+  .stats-hero-label {
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 28px 20px;
+    text-align: center;
+    backdrop-filter: blur(16px);
+    transition: border-color 0.25s, transform 0.25s;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    border-radius: 20px 20px 0 0;
+  }
+  .stat-card.green::before { background: linear-gradient(90deg, var(--accent), transparent); }
+  .stat-card.purple::before { background: linear-gradient(90deg, var(--purple), transparent); }
+  .stat-card.gold::before { background: linear-gradient(90deg, var(--gold), transparent); }
+  .stat-card:hover { border-color: var(--border-bright); transform: translateY(-3px); }
+  .stat-label {
+    font-size: 10px;
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .stat-number {
+    font-size: 46px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -2px;
+    margin-bottom: 6px;
+    transition: opacity 0.22s ease;
+  }
+  .stat-card.green .stat-number { color: var(--accent); }
+  .stat-card.purple .stat-number { color: var(--purple); }
+  .stat-card.gold .stat-number { color: var(--gold); }
+  .stat-sub {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+  }
+  .stat-number.is-loading {
+    opacity: 0.88;
+  }
+  .stats-status-bar {
+    text-align: center;
+    margin-top: var(--space-md);
+    min-height: 22px;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+  }
+  .stats-status-bar .stats-msg { display: inline; }
+  .stats-status-bar.error .stats-msg { color: var(--danger); }
+  .stats-retry {
+    margin-left: 10px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'Inter', sans-serif;
+    border-radius: 8px;
+    border: 1px solid var(--border-bright);
+    background: rgba(255,255,255,0.06);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .stats-retry:hover { border-color: var(--accent); color: var(--accent); }
+  .stats-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── ALERT PREVIEW CARD ── */
+  .alert-preview-wrap {
+    animation: fadeUp 0.5s 0.4s ease both;
+    max-width: 1180px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+  .alert-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    text-align: left;
+    backdrop-filter: blur(16px);
+    box-shadow: var(--shadow), var(--shadow-accent);
+  }
+  .alert-card-header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tg-bubble {
+    width: 36px; height: 36px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .tg-bubble-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+  .tg-name { font-size: 13px; font-weight: 700; }
+  .tg-time { font-size: 11px; color: var(--muted); }
+  .alert-body { font-size: 12.5px; line-height: 1.9; }
+  .alert-title-row { font-size: 14px; font-weight: 800; color: var(--warn); margin-bottom: 8px; }
+  .alert-divider { border-top: 1px solid var(--border); margin: 8px 0; }
+  .alert-row { display: flex; justify-content: space-between; align-items: center; }
+  .alert-key { color: var(--muted); font-size: 11.5px; }
+  .alert-val { font-weight: 600; font-size: 12px; }
+  .alert-val.profit { color: var(--warn); font-size: 13.5px; font-weight: 800; }
+  .alert-calc { margin-top: 10px; background: rgba(0,230,118,0.05); border: 1px solid rgba(0,230,118,0.12); border-radius: 10px; padding: 10px 12px; }
+  .alert-calc-title { font-size: 11px; color: var(--muted); margin-bottom: 5px; font-family: 'Space Mono', monospace; }
+  .alert-calc-row { font-size: 12px; line-height: 1.7; }
+  .alert-profit-line { color: var(--accent); font-size: 13px; font-weight: 700; margin-top: 4px; }
+
+  /* ── TICKER ── */
+  .ticker-wrap {
+    overflow: hidden;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,13,20,0.6);
+    padding: 12px 0;
+    position: relative;
+    z-index: 1;
+    backdrop-filter: blur(8px);
+  }
+  .ticker-track {
+    display: flex;
+    white-space: nowrap;
+    animation: tickerScroll 30s linear infinite;
+    will-change: transform;
+  }
+  .ticker-track:hover { animation-play-state: paused; }
+  @keyframes tickerScroll { 0%{transform:translateX(0)}100%{transform:translateX(-50%)} }
+  .ticker-item {
+    display: inline-flex; align-items: center;
+    font-size: 12.5px; font-family: 'Space Mono', monospace;
+    color: var(--text2);
+    padding: 0 32px;
+    gap: 6px;
+  }
+  .ticker-profit { color: var(--accent); font-weight: 700; }
+  .ticker-sep { color: var(--border-bright); }
+
+  /* ── SECTION ── */
+  section { padding: 80px 0; position: relative; z-index: 1; }
+  .section-label {
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--accent);
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .section-title {
+    font-size: clamp(26px, 4vw, 42px);
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 14px;
+    line-height: 1.15;
+    letter-spacing: -1px;
+  }
+  .section-title .highlight {
+    background: linear-gradient(135deg, var(--accent), #00b0ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .section-sub {
+    font-size: 16px;
+    color: var(--text2);
+    text-align: center;
+    max-width: 540px;
+    margin: 0 auto 52px;
+    line-height: 1.75;
+    font-weight: 400;
+  }
+  hr.divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0;
+    opacity: 0.6;
+  }
+
+  /* ── HOW IT WORKS ── */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 28px;
+    backdrop-filter: blur(12px);
+    transition: border-color 0.25s, transform 0.25s;
+  }
+  .step:hover { border-color: var(--border-bright); transform: translateY(-4px); }
+  .step-num {
+    width: 38px; height: 38px;
+    background: linear-gradient(135deg, var(--purple), #5e35b1);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 800;
+    font-family: 'Space Mono', monospace;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+  .step h3 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+  .step p { font-size: 14px; color: var(--text2); line-height: 1.7; }
+
+  /* ── FEATURES ── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .feature {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    backdrop-filter: blur(12px);
+    transition: border-color 0.25s, transform 0.2s;
+  }
+  .feature:hover { border-color: var(--accent); transform: translateY(-3px); }
+  .feature-icon { font-size: 26px; margin-bottom: 12px; }
+  .feature h3 { font-size: 14.5px; font-weight: 700; margin-bottom: 8px; }
+  .feature p { font-size: 13px; color: var(--text2); line-height: 1.7; }
+
+  /* ── BOOKMAKERS ── */
+  .bookmaker-row {
+    display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+    max-width: 700px; margin: 0 auto;
+  }
+  .bookmaker-pill {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+    backdrop-filter: blur(8px);
+    transition: all 0.2s;
+  }
+  .bookmaker-pill:hover { border-color: var(--accent); color: var(--accent); }
+  .bookmaker-note {
+    margin: 16px auto 0;
+    max-width: 760px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--text2);
+    line-height: 1.7;
+  }
+
+  /* ── PRICING ── */
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+  .pricing-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 32px 24px;
+    text-align: center;
+    backdrop-filter: blur(12px);
+    transition: all 0.25s;
+    position: relative;
+  }
+  .pricing-card:hover { transform: translateY(-4px); border-color: var(--border-bright); }
+  .pricing-card.featured {
+    border-color: var(--accent);
+    background: rgba(0,230,118,0.04);
+    box-shadow: 0 0 40px rgba(0,230,118,0.08);
+  }
+  .featured-badge {
+    position: absolute;
+    top: -12px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: #000;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px 14px;
+    border-radius: 100px;
+    white-space: nowrap;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.5px;
+  }
+  .pricing-plan {
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  .pricing-price { font-size: 48px; font-weight: 900; letter-spacing: -2px; margin-bottom: 4px; }
+  .pricing-price span { font-size: 22px; font-weight: 400; color: var(--muted); }
+  .pricing-period { font-size: 12.5px; color: var(--muted); margin-bottom: 24px; }
+  .pricing-features { list-style: none; margin-bottom: 28px; text-align: left; }
+  .pricing-features li {
+    font-size: 13px; color: var(--text2);
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(50,60,90,0.3);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .pricing-features li::before { content: '✓'; color: var(--accent); font-weight: 700; font-size: 13px; flex-shrink: 0; }
+  .pricing-features li:last-child { border-bottom: none; }
+  .btn-pricing {
+    width: 100%;
+    display: block;
+    padding: 13px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'Inter', sans-serif;
+    text-decoration: none;
+    text-align: center;
+    transition: all 0.2s;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-pricing-primary { background: var(--accent); color: #000; }
+  .btn-pricing-primary:hover { background: #00f083; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,230,118,0.25); }
+  .btn-pricing-secondary { background: rgba(255,255,255,0.07); color: var(--text); border: 1px solid var(--border-bright); }
+  .btn-pricing-secondary:hover { background: rgba(255,255,255,0.12); }
+
+  .disclaimer {
+    max-width: 680px; margin: 36px auto 0;
+    font-size: 12px; color: var(--muted);
+    text-align: center; line-height: 1.7;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+
+  /* ── CALCULATOR ── */
+  .calc-box {
+    max-width: 620px;
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 36px;
+    backdrop-filter: blur(12px);
+  }
+  .calc-row { margin-bottom: 24px; }
+  .calc-row-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+  }
+  .calc-row-label { font-size: 13px; font-weight: 600; color: var(--text2); }
+  .calc-row-val { font-size: 15px; font-weight: 800; color: var(--accent); font-family: 'Space Mono', monospace; }
+  input[type=range] {
+    width: 100%; -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 4px;
+    background: var(--border); outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--accent);
+    transition: transform 0.15s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+  .calc-results {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    margin-top: 28px;
+  }
+  .calc-result-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 14px;
+    text-align: center;
+  }
+  .calc-result-label { font-size: 11px; color: var(--muted); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .calc-result-value { font-size: 22px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; }
+
+  /* ── ODDS CALCULATOR ── */
+  .odds-calc-box {
+    max-width: 720px;
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    backdrop-filter: blur(12px);
+  }
+  .odds-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+  }
+  .odds-field label {
+    display: block;
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .odds-field input,
+  .odds-field select {
+    width: 100%;
+    padding: 11px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+  }
+  .odds-field input:focus,
+  .odds-field select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+  .odds-result {
+    margin-top: 16px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--text2);
+    line-height: 1.8;
+  }
+  .odds-result b { color: var(--text); }
+  .odds-result .good { color: var(--accent); font-weight: 700; }
+  .odds-result .bad { color: var(--warn); font-weight: 700; }
+
+  /* ── FAQ ── */
+  .faq-list { max-width: 680px; margin: 0 auto; }
+  .faq-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    transition: border-color 0.2s;
+  }
+  .faq-item:hover { border-color: var(--border-bright); }
+  button.faq-q {
+    width: 100%;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    font-family: inherit;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .faq-q:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: var(--radius);
+  }
+  .faq-q {
+    padding: 18px 20px;
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px;
+    user-select: none;
+  }
+  .faq-q::after {
+    content: '+';
+    font-size: 20px;
+    color: var(--muted);
+    font-weight: 400;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+  }
+  .faq-item.open .faq-q::after { transform: rotate(45deg); color: var(--accent); }
+  .faq-a {
+    max-height: 0; overflow: hidden;
+    font-size: 13.5px; color: var(--text2); line-height: 1.75;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    padding: 0 20px;
+  }
+  .faq-item.open .faq-a { max-height: 200px; padding: 0 20px 18px; }
+
+  /* ── TESTIMONIALS ── */
+  .testimonials-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+  }
+  .testimonial {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    backdrop-filter: blur(12px);
+    transition: border-color 0.25s;
+  }
+  .testimonial:hover { border-color: var(--border-bright); }
+  .testimonial-stars { font-size: 14px; color: var(--gold); margin-bottom: 12px; letter-spacing: 2px; }
+  .testimonial-text { font-size: 13.5px; color: var(--text2); line-height: 1.75; margin-bottom: 18px; font-style: italic; }
+  .testimonial-author { display: flex; align-items: center; gap: 10px; }
+  .testimonial-avatar {
+    width: 36px; height: 36px;
+    background: var(--purple-dim);
+    border: 1px solid var(--border-bright);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .testimonial-name { font-size: 13px; font-weight: 700; }
+  .testimonial-since { font-size: 11px; color: var(--muted); }
+
+  /* ── CONTACT ── */
+  .contact-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 48px;
+    text-align: center;
+    max-width: 560px;
+    margin: 0 auto;
+    backdrop-filter: blur(16px);
+  }
+  .contact-icon { font-size: 48px; margin-bottom: 16px; }
+  .contact-card h3 { font-size: 24px; font-weight: 800; margin-bottom: 10px; letter-spacing: -0.5px; }
+  .contact-card p { font-size: 15px; color: var(--text2); line-height: 1.7; margin-bottom: 28px; }
+  .btn-telegram {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: #29b6f6;
+    color: #fff;
+    padding: 14px 32px;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .btn-telegram:hover { background: #039be5; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(41,182,246,0.3); }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12.5px;
+    position: relative; z-index: 1;
+  }
+
+  /* ── STICKY CTA ── */
+  .sticky-cta {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    z-index: 500;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: all 0.3s;
+    pointer-events: none;
+  }
+  .sticky-cta.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .sticky-cta a {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent);
+    color: #000;
+    padding: 13px 22px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 800;
+    text-decoration: none;
+    box-shadow: 0 4px 24px rgba(0,230,118,0.35);
+    transition: all 0.2s;
+  }
+  .sticky-cta a:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,230,118,0.4); }
+
+  /* ── SCROLL FADE ── */
+  .fade-up { opacity: 0; transform: translateY(20px); transition: opacity 0.55s ease, transform 0.55s ease; }
+  .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 800px) {
+    .alert-preview-wrap { grid-template-columns: 1fr; max-width: 400px; }
+    .steps, .features-grid, .pricing-grid, .testimonials-grid { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: 1fr; gap: 10px; max-width: 520px; }
+    .stat-number { font-size: 32px; }
+    .nav-links { display: none; }
+    .calc-results { grid-template-columns: repeat(3, 1fr); }
+    .odds-form-grid { grid-template-columns: 1fr; }
+    .hero h1 { letter-spacing: -1px; }
+    .contact-card { padding: 32px 24px; }
+  }
+  @media (max-width: 540px) {
+    .stats-grid { grid-template-columns: 1fr; max-width: 320px; }
+    .calc-results { grid-template-columns: 1fr; }
+    .hero { padding: 124px 0 64px; }
+    .nav-inner { margin: 10px auto; padding: 10px 14px; }
+    .nav-dash { padding: 7px 12px !important; font-size: 12px !important; }
+  }
+
+  /* ── REDUCED MOTION / PERF ── */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+    .ticker-track { animation: none !important; transform: none !important; }
+    .fade-up { opacity: 1 !important; transform: none !important; }
+    /* fadeUp uses fill-mode “both”; crushing duration can leave opacity stuck at 0 (same as .fade-up fix) */
+    .hero-brand-logo,
+    .hero-badge,
+    .hero h1,
+    .hero-sub,
+    .hero-actions,
+    .stats-hero,
+    .alert-preview-wrap {
+      opacity: 1 !important;
+      transform: none !important;
+      animation: none !important;
+    }
+    .hero-dot { animation: none !important; opacity: 1 !important; transform: none !important; }
+    .space-scene .star-field { animation: none !important; transform: none !important; }
+    .space-scene .star-dot.is-twinkle { animation: none !important; }
+    .space-scene .shooting-star { animation: none !important; opacity: 0 !important; }
+    .space-scene .rocket,
+    .space-scene .rocket.is-flying { animation: none !important; }
+    .space-scene .rocket-skin { transform: none !important; }
+    .stat-number.is-loading {
+      opacity: 0.88;
+    }
+  }
+
+  footer a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  .sticky-cta a:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+  }
+</style>
+</head>
+<body>
+
+<div class="space-scene" aria-hidden="true">
+  <div class="star-field star-field--back" id="star-field-back"></div>
+  <div class="star-field star-field--mid" id="star-field-mid"></div>
+  <div class="star-field star-field--front" id="star-field-front"></div>
+  <div class="shooting-star"></div>
+  <div class="shooting-star"></div>
+  <div class="shooting-star"></div>
+  <div class="rockets-layer" id="rockets-layer"></div>
+</div>
+
+<template id="rocket-tpl">
+  <div class="rocket" data-rocket>
+    <div class="rocket-skin"></div>
+  </div>
+</template>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a class="nav-logo" href="#">
+      <img class="nav-logo-img" src="ghost-arb-logo-optimized.png" alt="Ghost Arb Bot — ghost holding two odds cards" width="40" height="40" decoding="async">
+      <div class="nav-logo-text">Ghost <span>Arb Bot</span></div>
+    </a>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <ul class="nav-links">
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#odds-calculator">Odds Calculator</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="#pricing" class="nav-cta">Checkout</a></li>
+      </ul>
+      <a href="https://cbiz1bot.github.io/arb-dash/dashboard.html" target="_blank" class="nav-dash">🔐 Dashboard</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <img class="hero-brand-logo" src="ghost-arb-logo-optimized.png" alt="" width="280" height="280" decoding="async" aria-hidden="true">
+    <div class="hero-badge">
+      <div class="hero-dot"></div>
+      Live — Real-Time Arbitrage Alerts
+    </div>
+    <h1>Find <span class="highlight">Guaranteed Profit</span><br>Bets on Autopilot</h1>
+    <p class="hero-sub">Ghost Arb Bot monitors top bookmakers 24/7 and fires instant Telegram alerts for Surebets and Valuebets, complete with odds, stakes and calculator. Middles is planned to roll out after one month of successful launch performance.</p>
+    <div class="hero-actions">
+      <a href="#pricing" class="btn btn-primary">🚀 Get Started</a>
+      <a href="#how-it-works" class="btn btn-secondary">See How It Works →</a>
+    </div>
+
+    <!-- LIVE STATS -->
+    <div class="stats-hero">
+      <div class="stats-hero-label">⚡ Live Stats — Auto-refresh every 5s</div>
+      <div class="stats-grid">
+        <div class="stat-card green">
+          <div class="stat-label">Alerts Today</div>
+          <div class="stat-number" id="counter-daily">0</div>
+          <div class="stat-sub">resets at midnight</div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-label">Total Alerts</div>
+          <div class="stat-number" id="counter-total">0</div>
+          <div class="stat-sub">and counting</div>
+        </div>
+        <div class="stat-card gold">
+          <div class="stat-label">Scan Interval</div>
+          <div class="stat-number">10s</div>
+          <div class="stat-sub">always watching</div>
+        </div>
+      </div>
+      <div class="stats-status-bar" id="stats-status-bar" aria-live="polite">
+        <span class="stats-msg" id="stats-msg"></span>
+        <button type="button" class="stats-retry" id="stats-retry-btn" style="display:none;">Retry</button>
+      </div>
+    </div>
+
+    <!-- ALERT PREVIEW (2-way arb: same math as Odds Calculator below) -->
+    <div class="alert-preview-wrap">
+      <div class="alert-card">
+        <div class="alert-card-header">
+          <div class="tg-bubble" aria-hidden="true">
+            <img class="tg-bubble-logo" src="ghost-arb-logo-optimized.png" alt="">
+          </div>
+          <div>
+            <div class="tg-name">Ghost Arb Bot</div>
+            <div class="tg-time">Just now</div>
+          </div>
+          <div style="margin-left:auto;background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.2);border-radius:6px;padding:3px 10px;font-size:11px;font-family:'Space Mono',monospace;color:var(--accent);">LIVE</div>
+        </div>
+        <div class="alert-body">
+          <div class="alert-title-row">🟠 New Arb Bet Alert! <span style="font-size:12px;color:var(--text2);font-weight:400;">(Example)</span></div>
+          <div class="alert-divider"></div>
+          <div class="alert-row"><span class="alert-key">🕐 Found at</span><span class="alert-val">22 Mar 2026 18:42</span></div>
+          <div class="alert-row"><span class="alert-key">🏆 Event</span><span class="alert-val">Man City vs Arsenal</span></div>
+          <div class="alert-row"><span class="alert-key">🌍 Nation</span><span class="alert-val">England</span></div>
+          <div class="alert-row"><span class="alert-key">🏅 League</span><span class="alert-val">Premier League</span></div>
+          <div class="alert-row"><span class="alert-key">🎯 Market</span><span class="alert-val">Over/Under Cards 3.5</span></div>
+          <div class="alert-row"><span class="alert-key">💰 Profit</span><span class="alert-val profit">9.49%</span></div>
+          <div class="alert-row"><span class="alert-key">📚 Books</span><span class="alert-val">Bet365 vs William Hill</span></div>
+          <div class="alert-row"><span class="alert-key">📊 Odds</span><span class="alert-val">2.05 / 2.35</span></div>
+          <div class="alert-calc">
+            <div class="alert-calc-title">🧮 Calculator (£200 total stake)</div>
+            <div class="alert-calc-row">📌 Over 3.5 Cards @ Bet365 (2.05) → Stake <b>£106.82</b></div>
+            <div class="alert-calc-row">📌 Under 3.5 Cards @ William Hill (2.35) → Stake <b>£93.18</b></div>
+            <div class="alert-profit-line">💰 Guaranteed profit: <b>£18.98</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="alert-card">
+        <div class="alert-card-header">
+          <div class="tg-bubble" aria-hidden="true">
+            <img class="tg-bubble-logo" src="ghost-arb-logo-optimized.png" alt="">
+          </div>
+          <div>
+            <div class="tg-name">Ghost Arb Bot</div>
+            <div class="tg-time">1 min ago</div>
+          </div>
+          <div style="margin-left:auto;background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.2);border-radius:6px;padding:3px 10px;font-size:11px;font-family:'Space Mono',monospace;color:var(--accent);">LIVE</div>
+        </div>
+        <div class="alert-body">
+          <div class="alert-title-row">🟠 New Arb Bet Alert! <span style="font-size:12px;color:var(--text2);font-weight:400;">(Example)</span></div>
+          <div class="alert-divider"></div>
+          <div class="alert-row"><span class="alert-key">🕐 Found at</span><span class="alert-val">22 Mar 2026 19:05</span></div>
+          <div class="alert-row"><span class="alert-key">🏆 Event</span><span class="alert-val">Bruins vs Maple Leafs</span></div>
+          <div class="alert-row"><span class="alert-key">🌍 Nation</span><span class="alert-val">USA &amp; Canada</span></div>
+          <div class="alert-row"><span class="alert-key">🏅 League</span><span class="alert-val">NHL</span></div>
+          <div class="alert-row"><span class="alert-key">🎯 Market</span><span class="alert-val">Puck Line −1.5 / +1.5</span></div>
+          <div class="alert-row"><span class="alert-key">💰 Profit</span><span class="alert-val profit">8.00%</span></div>
+          <div class="alert-row"><span class="alert-key">📚 Books</span><span class="alert-val">FanDuel vs DraftKings</span></div>
+          <div class="alert-row"><span class="alert-key">📊 Odds</span><span class="alert-val">2.16 / 2.16</span></div>
+          <div class="alert-calc">
+            <div class="alert-calc-title">🧮 Calculator (£200 total stake)</div>
+            <div class="alert-calc-row">📌 Bruins −1.5 @ FanDuel (2.16) → Stake <b>£100.00</b></div>
+            <div class="alert-calc-row">📌 Maple Leafs +1.5 @ DraftKings (2.16) → Stake <b>£100.00</b></div>
+            <div class="alert-profit-line">💰 Guaranteed profit: <b>£16.00</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="alert-card">
+        <div class="alert-card-header">
+          <div class="tg-bubble" aria-hidden="true">
+            <img class="tg-bubble-logo" src="ghost-arb-logo-optimized.png" alt="">
+          </div>
+          <div>
+            <div class="tg-name">Ghost Arb Bot</div>
+            <div class="tg-time">2 mins ago</div>
+          </div>
+          <div style="margin-left:auto;background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.2);border-radius:6px;padding:3px 10px;font-size:11px;font-family:'Space Mono',monospace;color:var(--accent);">LIVE</div>
+        </div>
+        <div class="alert-body">
+          <div class="alert-title-row">🟠 New Arb Bet Alert! <span style="font-size:12px;color:var(--text2);font-weight:400;">(Example)</span></div>
+          <div class="alert-divider"></div>
+          <div class="alert-row"><span class="alert-key">🕐 Found at</span><span class="alert-val">22 Mar 2026 19:18</span></div>
+          <div class="alert-row"><span class="alert-key">🏆 Event</span><span class="alert-val">Djokovic vs Alcaraz</span></div>
+          <div class="alert-row"><span class="alert-key">🌍 Nation</span><span class="alert-val">International</span></div>
+          <div class="alert-row"><span class="alert-key">🏅 League</span><span class="alert-val">ATP Tour</span></div>
+          <div class="alert-row"><span class="alert-key">🎯 Market</span><span class="alert-val">Match Winner</span></div>
+          <div class="alert-row"><span class="alert-key">💰 Profit</span><span class="alert-val profit">9.00%</span></div>
+          <div class="alert-row"><span class="alert-key">📚 Books</span><span class="alert-val">Betfair vs Paddy Power</span></div>
+          <div class="alert-row"><span class="alert-key">📊 Odds</span><span class="alert-val">2.18 / 2.18</span></div>
+          <div class="alert-calc">
+            <div class="alert-calc-title">🧮 Calculator (£200 total stake)</div>
+            <div class="alert-calc-row">📌 Djokovic @ Betfair (2.18) → Stake <b>£100.00</b></div>
+            <div class="alert-calc-row">📌 Alcaraz @ Paddy Power (2.18) → Stake <b>£100.00</b></div>
+            <div class="alert-profit-line">💰 Guaranteed profit: <b>£18.00</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TICKER -->
+<div class="ticker-wrap">
+  <div class="ticker-track">
+    <div class="ticker-item">⚽ Man City vs Arsenal <span class="ticker-sep">·</span> O/U Cards 3.5 <span class="ticker-sep">·</span> <span class="ticker-profit">9.49%</span> profit <span class="ticker-sep">·</span> Bet365 vs William Hill <span class="ticker-sep">·</span> 2 mins ago</div>
+    <div class="ticker-item">🏒 Bruins vs Maple Leafs <span class="ticker-sep">·</span> Puck Line ±1.5 <span class="ticker-sep">·</span> <span class="ticker-profit">8.00%</span> profit <span class="ticker-sep">·</span> FanDuel vs DraftKings <span class="ticker-sep">·</span> 4 mins ago</div>
+    <div class="ticker-item">🎾 Djokovic vs Alcaraz <span class="ticker-sep">·</span> Match Winner <span class="ticker-sep">·</span> <span class="ticker-profit">9.00%</span> profit <span class="ticker-sep">·</span> Betfair vs Paddy Power <span class="ticker-sep">·</span> 7 mins ago</div>
+    <div class="ticker-item">⚽ Liverpool vs Chelsea <span class="ticker-sep">·</span> Over/Under Cards 4.5 <span class="ticker-sep">·</span> <span class="ticker-profit">6.21%</span> profit <span class="ticker-sep">·</span> Sky Bet vs Bwin <span class="ticker-sep">·</span> 11 mins ago</div>
+    <div class="ticker-item">🎾 Sinner vs Medvedev <span class="ticker-sep">·</span> Over/Under Aces 10.5 <span class="ticker-sep">·</span> <span class="ticker-profit">4.55%</span> profit <span class="ticker-sep">·</span> Betuk vs William Hill <span class="ticker-sep">·</span> 15 mins ago</div>
+    <div class="ticker-item">⚽ Barcelona vs Real Madrid <span class="ticker-sep">·</span> Over/Under Cards 5.5 <span class="ticker-sep">·</span> <span class="ticker-profit">11.20%</span> profit <span class="ticker-sep">·</span> Bet365 vs Betfair <span class="ticker-sep">·</span> 18 mins ago</div>
+    <!-- duplicate for seamless loop -->
+    <div class="ticker-item">⚽ Man City vs Arsenal <span class="ticker-sep">·</span> O/U Cards 3.5 <span class="ticker-sep">·</span> <span class="ticker-profit">9.49%</span> profit <span class="ticker-sep">·</span> Bet365 vs William Hill <span class="ticker-sep">·</span> 2 mins ago</div>
+    <div class="ticker-item">🏒 Bruins vs Maple Leafs <span class="ticker-sep">·</span> Puck Line ±1.5 <span class="ticker-sep">·</span> <span class="ticker-profit">8.00%</span> profit <span class="ticker-sep">·</span> FanDuel vs DraftKings <span class="ticker-sep">·</span> 4 mins ago</div>
+    <div class="ticker-item">🎾 Djokovic vs Alcaraz <span class="ticker-sep">·</span> Match Winner <span class="ticker-sep">·</span> <span class="ticker-profit">9.00%</span> profit <span class="ticker-sep">·</span> Betfair vs Paddy Power <span class="ticker-sep">·</span> 7 mins ago</div>
+    <div class="ticker-item">⚽ Liverpool vs Chelsea <span class="ticker-sep">·</span> Over/Under Cards 4.5 <span class="ticker-sep">·</span> <span class="ticker-profit">6.21%</span> profit <span class="ticker-sep">·</span> Sky Bet vs Bwin <span class="ticker-sep">·</span> 11 mins ago</div>
+    <div class="ticker-item">🎾 Sinner vs Medvedev <span class="ticker-sep">·</span> Over/Under Aces 10.5 <span class="ticker-sep">·</span> <span class="ticker-profit">4.55%</span> profit <span class="ticker-sep">·</span> Betuk vs William Hill <span class="ticker-sep">·</span> 15 mins ago</div>
+    <div class="ticker-item">⚽ Barcelona vs Real Madrid <span class="ticker-sep">·</span> Over/Under Cards 5.5 <span class="ticker-sep">·</span> <span class="ticker-profit">11.20%</span> profit <span class="ticker-sep">·</span> Bet365 vs Betfair <span class="ticker-sep">·</span> 18 mins ago</div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ODDS CALCULATOR -->
+<section id="odds-calculator">
+  <div class="container">
+    <div class="section-label">Tools</div>
+    <h2 class="section-title">Homemade <span class="highlight">Odds Calculator</span></h2>
+    <p class="section-sub">Enter both sides of the market and switch between decimal or fractional odds.</p>
+    <div class="odds-calc-box fade-up">
+      <div class="odds-form-grid">
+        <div class="odds-field">
+          <label for="odds-format">Odds Format</label>
+          <select id="odds-format" onchange="updateOddsCalc()">
+            <option value="decimal">Decimal</option>
+            <option value="fractional">Fractional</option>
+          </select>
+        </div>
+        <div class="odds-field">
+          <label for="odd-a">Side A Odds</label>
+          <input id="odd-a" type="text" value="1.95" oninput="updateOddsCalc()" placeholder="e.g. 1.95 or 19/20">
+        </div>
+        <div class="odds-field">
+          <label for="odd-b">Side B Odds</label>
+          <input id="odd-b" type="text" value="2.20" oninput="updateOddsCalc()" placeholder="e.g. 2.20 or 6/5">
+        </div>
+      </div>
+      <div id="odds-result" class="odds-result">Enter valid odds to calculate.</div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- HOW IT WORKS -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="section-label">How It Works</div>
+    <h2 class="section-title">How to Place an <span class="highlight">Arbitrage Bet</span></h2>
+    <p class="section-sub">Simple process, but timing matters: copy both sides, verify prices still match the alert, and confirm the expected return before you submit.</p>
+    <div class="steps">
+      <div class="step fade-up">
+        <div class="step-num">1</div>
+        <h3>Open the Alert and Prepare Both Books</h3>
+        <p>When a Telegram alert lands, open both bookmaker links immediately and make sure you are on the exact event and market shown in the alert.</p>
+      </div>
+      <div class="step fade-up">
+        <div class="step-num">2</div>
+        <h3>Copy Both Bets (Do Not Place Just One)</h3>
+        <p>Enter both legs exactly as listed (selection + stake split). Arbitrage only works when both sides are placed; one side alone is normal betting risk.</p>
+      </div>
+      <div class="step fade-up">
+        <div class="step-num">3</div>
+        <h3>Verify Live Odds Still Match the Alert</h3>
+        <p>Before confirming, check the live odds in both books against the alert values. If either price moved, recalculate or skip — stale odds can remove the edge.</p>
+      </div>
+      <div class="step fade-up">
+        <div class="step-num">4</div>
+        <h3>Confirm Profit, Then Submit Both</h3>
+        <p>Check that the projected profit/return still matches the alert calculator at your final odds and stakes, then place both bets. Always verify before you click.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">Built to Feel <span class="highlight">Simple &amp; Calm</span></h2>
+    <p class="section-sub">Clear alerts, no guesswork on stakes, and tools you can trust — whether you use the group or run it yourself.</p>
+    <div class="features-grid">
+      <div class="feature fade-up">
+        <div class="feature-icon">⚡</div>
+        <h3>Steady, Timely Scanning</h3>
+        <p>The monitor refreshes on a short, sensible interval so you see new opportunities soon after they appear — without you staring at a screen all day.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">📲</div>
+        <h3>Alerts Where You Already Are</h3>
+        <p>Pings arrive in Telegram so you can check them on your phone, at your pace — no extra apps to learn.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">🧮</div>
+        <h3>Stake Suggestions Included</h3>
+        <p>Each alert can show a balanced split across legs (based on your chosen total stake) so you are not doing scratch-pad maths in a hurry.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">🔗</div>
+        <h3>Jump Straight to the Bet</h3>
+        <p>Where the bookmaker allows it, links get you close to the right market — less tab-hunting when seconds matter.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">🔒</div>
+        <h3>Members-Only Group</h3>
+        <p>Alerts go to a private Telegram space so the feed stays focused for people who have access.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">🛠️</div>
+        <h3>Guided Self-Host Setup</h3>
+        <p>Prefer to run it on your own machine? A step-by-step wizard walks through config — or join the group and skip the technical side entirely.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">⏰</div>
+        <h3>Filter Out Stale Lines (Self-Host)</h3>
+        <p>When you run the bot locally, you can cap how “old” a line can be before it is ignored — so you are not chasing moved odds.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">📊</div>
+        <h3>Your Minimum Edge (Self-Host)</h3>
+        <p>Set a profit floor you are comfortable acting on; the bot only nags you when the edge clears your bar.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">📅</div>
+        <h3>Public Activity Counters</h3>
+        <p>The site can show daily and all-time alert counts so you get a sense of how active things are — no hype, just numbers.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">💎</div>
+        <h3>Surebets, Valuebets &amp; Middles Roadmap (Self-Host)</h3>
+        <p>Run the classic Surebets list or switch to Valuebets today with the same Telegram flow. Middles is scheduled to be added after one month of successful rollout and stability checks.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">🤝</div>
+        <h3>People Actually Using It</h3>
+        <p>Members share what works, ask questions, and compare notes — helpful when you are new or when markets move fast.</p>
+      </div>
+      <div class="feature fade-up">
+        <div class="feature-icon">💼</div>
+        <h3>Shipped by Someone in the Trenches</h3>
+        <p>This tool was built to solve a real problem: catching edges without living inside ten browser tabs. Expect pragmatic updates and straight answers.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- BOOKMAKERS -->
+<section>
+  <div class="container">
+    <div class="section-label">Supported Bookmakers</div>
+    <h2 class="section-title">Works With All <span class="highlight">Major Bookmakers</span></h2>
+    <p class="section-sub">The bot monitors all of these simultaneously so you never miss an opportunity.</p>
+    <div class="bookmaker-row fade-up">
+      <div class="bookmaker-pill">Bet365</div>
+      <div class="bookmaker-pill">William Hill</div>
+      <div class="bookmaker-pill">Betfair</div>
+      <div class="bookmaker-pill">Paddy Power</div>
+      <div class="bookmaker-pill">Sky Bet</div>
+      <div class="bookmaker-pill">Ladbrokes</div>
+      <div class="bookmaker-pill">Coral</div>
+      <div class="bookmaker-pill">Unibet</div>
+      <div class="bookmaker-pill">888sport</div>
+      <div class="bookmaker-pill">Betfred</div>
+      <div class="bookmaker-pill">BoyleSports</div>
+      <div class="bookmaker-pill">Spreadex</div>
+      <div class="bookmaker-pill">Midnite</div>
+      <div class="bookmaker-pill">QuinnBet</div>
+      <div class="bookmaker-pill">LiveScore Bet</div>
+      <div class="bookmaker-pill">Virgin Bet</div>
+      <div class="bookmaker-pill">Parimatch</div>
+      <div class="bookmaker-pill">BetMGM</div>
+      <div class="bookmaker-pill">BetUK</div>
+      <div class="bookmaker-pill">BetVictor</div>
+      <div class="bookmaker-pill">Bwin</div>
+    </div>
+    <p class="bookmaker-note">Also works with selected worldwide bookmakers and major exchanges, including Betfair Exchange and Smarkets.</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- PRICING -->
+<section id="pricing">
+  <div class="container">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">Simple, <span class="highlight">Transparent</span> Pricing</h2>
+    <p class="section-sub">No hidden fees. Cancel anytime. The bot pays for itself with your very first successful arb.</p>
+    <div class="pricing-grid">
+
+      <div class="pricing-card fade-up">
+        <div class="pricing-plan">Monthly</div>
+        <div class="pricing-price"><span>£</span>20</div>
+        <div class="pricing-period">per month</div>
+        <ul class="pricing-features">
+          <li>Private Telegram alert group access</li>
+          <li>Telegram alerts</li>
+          <li>Built-in calculator</li>
+          <li>Simple getting-started guide included</li>
+        </ul>
+        <a id="pl-monthly" href="https://buy.stripe.com/bJeaEQ3tH2JT18a7qf2B205" class="btn-pricing btn-pricing-secondary" target="_blank" rel="noopener noreferrer">Checkout</a>
+      </div>
+
+      <div class="pricing-card featured fade-up">
+        <div class="featured-badge">⭐ Most Popular</div>
+        <div class="pricing-plan">6 Months</div>
+        <div class="pricing-price"><span>£</span>90</div>
+        <div class="pricing-period">every 6 months — save £30</div>
+        <ul class="pricing-features">
+          <li>Private Telegram alert group access</li>
+          <li>Telegram alerts</li>
+          <li>Built-in calculator</li>
+          <li>Simple getting-started guide included</li>
+          <li>Priority support</li>
+        </ul>
+        <a id="pl-six" href="https://buy.stripe.com/bJe14g7JX0BL046h0P2B203" class="btn-pricing btn-pricing-primary" target="_blank" rel="noopener noreferrer">Checkout</a>
+      </div>
+
+      <div class="pricing-card fade-up">
+        <div class="pricing-plan">Annual</div>
+        <div class="pricing-price"><span>£</span>120</div>
+        <div class="pricing-period">per year — save £120</div>
+        <ul class="pricing-features">
+          <li>Private Telegram alert group access</li>
+          <li>Telegram alerts</li>
+          <li>Built-in calculator</li>
+          <li>Simple getting-started guide included</li>
+          <li>Priority support</li>
+          <li>Best value</li>
+        </ul>
+        <a id="pl-annual" href="https://buy.stripe.com/7sY5kwaW9acl4km8uj2B202" class="btn-pricing btn-pricing-secondary" target="_blank" rel="noopener noreferrer">Checkout</a>
+      </div>
+
+    </div>
+    <div class="disclaimer">
+      ⚠️ No additional surebet subscription is required. You are buying direct access to our private Telegram alert group. Self-hosted bot setup is optional and handled separately. Always verify odds before placing. You are responsible for your own betting decisions.
+    </div>
+  </div>
+</section>
+
+<!-- PROFIT CALCULATOR -->
+<section>
+  <div class="container">
+    <div class="section-label">Profit Calculator</div>
+    <h2 class="section-title">How Much Could <span class="highlight">You Make?</span></h2>
+    <p class="section-sub">Adjust the sliders to see your potential guaranteed returns per bet.</p>
+    <div class="calc-box fade-up">
+      <div class="calc-row">
+        <div class="calc-row-header">
+          <span class="calc-row-label">Total Stake</span>
+          <span class="calc-row-val" id="stake-val">£500</span>
+        </div>
+        <input type="range" id="stake-slider" min="50" max="5000" step="50" value="500" oninput="updateCalc()">
+      </div>
+      <div class="calc-row">
+        <div class="calc-row-header">
+          <span class="calc-row-label">Profit %</span>
+          <span class="calc-row-val" id="profit-val">5%</span>
+        </div>
+        <input type="range" id="profit-slider" min="1" max="15" step="0.5" value="5" oninput="updateCalc()">
+      </div>
+      <div class="calc-row" style="margin-bottom:0;">
+        <div class="calc-row-header">
+          <span class="calc-row-label">Bets Per Day</span>
+          <span class="calc-row-val" id="bets-val">3</span>
+        </div>
+        <input type="range" id="bets-slider" min="1" max="20" step="1" value="3" oninput="updateCalc()">
+      </div>
+      <div class="calc-results">
+        <div class="calc-result-card">
+          <div class="calc-result-label">Per Bet</div>
+          <div class="calc-result-value" id="res-bet">£25.00</div>
+        </div>
+        <div class="calc-result-card">
+          <div class="calc-result-label">Per Day</div>
+          <div class="calc-result-value" id="res-day" style="color:var(--warn);">£75.00</div>
+        </div>
+        <div class="calc-result-card">
+          <div class="calc-result-label">Per Month</div>
+          <div class="calc-result-value" id="res-month" style="color:var(--gold);">£2,250</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--muted);text-align:center;margin-top:20px;font-family:'Space Mono',monospace;line-height:1.6;">⚠️ Estimates only. Verify odds before placing. Past opportunities do not guarantee future results.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="container">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title">Common <span class="highlight">Questions</span></h2>
+    <p class="section-sub">Everything you need to know before getting started.</p>
+    <div class="faq-list">
+      <div class="faq-item fade-up">
+        <button type="button" class="faq-q" onclick="toggleFaq(this)">What is arbitrage betting?</button>
+        <div class="faq-a">Arbitrage betting (or arbing) involves placing bets on all possible outcomes of an event across different bookmakers, where the combined odds guarantee a profit regardless of the result. The bot finds these opportunities automatically.</div>
+      </div>
+      <div class="faq-item fade-up">
+        <button type="button" class="faq-q" onclick="toggleFaq(this)">Is arbitrage betting legal?</button>
+        <div class="faq-a">Yes, arbitrage betting is completely legal. Some bookmakers may limit or close accounts of frequent arbers, but it is not against any law. We recommend spreading your activity across multiple bookmakers.</div>
+      </div>
+      <div class="faq-item fade-up">
+        <button type="button" class="faq-q" onclick="toggleFaq(this)">What do I need to get started?</button>
+        <div class="faq-a">For Telegram group access, you only need a Telegram account and bookmaker accounts to place your bets. No surebet.com subscription is needed.</div>
+      </div>
+      <div class="faq-item fade-up">
+        <button type="button" class="faq-q" onclick="toggleFaq(this)">Do I need to leave my computer on?</button>
+        <div class="faq-a">No for Telegram group access. Alerts are posted in our private Telegram group, so you can receive them directly on your phone without running anything locally. (Only self-hosted users need to run the bot.)</div>
+      </div>
+      <div class="faq-item fade-up">
+        <button type="button" class="faq-q" onclick="toggleFaq(this)">How quickly does it find bets?</button>
+        <div class="faq-a">Alerts are posted in real time to the private group. Most opportunities appear in the feed within seconds of being detected.</div>
+      </div>
+      <div class="faq-item fade-up">
+        <button type="button" class="faq-q" onclick="toggleFaq(this)">Can I use it on multiple devices?</button>
+        <div class="faq-a">You can access the private alert group from any device where you use Telegram.</div>
+      </div>
+      <div class="faq-item fade-up">
+        <button type="button" class="faq-q" onclick="toggleFaq(this)">Can I share it with friends?</button>
+        <div class="faq-a">Access is for paying members only. Friends need their own membership to join the private alert group. Group deals may be available — contact us for details.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- TESTIMONIALS -->
+<section>
+  <div class="container">
+    <div class="section-label">What People Say</div>
+    <h2 class="section-title">Trusted by <span class="highlight">Arbers</span></h2>
+    <p class="section-sub">Don't just take our word for it.</p>
+    <div class="testimonials-grid">
+      <div class="testimonial fade-up">
+        <div class="testimonial-stars">★★★★★</div>
+        <p class="testimonial-text">"Found a 9% arb on a Premier League match within the first hour. The calculator made it dead simple to know how much to stake on each side. Brilliant tool."</p>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">👤</div>
+          <div>
+            <div class="testimonial-name">Jamie T.</div>
+            <div class="testimonial-since">Member since Jan 2026</div>
+          </div>
+        </div>
+      </div>
+      <div class="testimonial fade-up">
+        <div class="testimonial-stars">★★★★★</div>
+        <p class="testimonial-text">"I was sceptical at first but it genuinely works. The Telegram alerts come through almost instantly and the bet instructions tell me exactly what to do every time."</p>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">👤</div>
+          <div>
+            <div class="testimonial-name">Ryan M.</div>
+            <div class="testimonial-since">Member since Feb 2026</div>
+          </div>
+        </div>
+      </div>
+      <div class="testimonial fade-up">
+        <div class="testimonial-stars">★★★★★</div>
+        <p class="testimonial-text">"Paid for itself on day one. Love the daily stats summary at midnight too — keeps you motivated. Group access was straightforward and alerts started quickly."</p>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">👤</div>
+          <div>
+            <div class="testimonial-name">Lee P.</div>
+            <div class="testimonial-since">Member since Jan 2026</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- CONTACT -->
+<section id="contact">
+  <div class="container">
+    <div class="section-label">Checkout</div>
+    <h2 class="section-title">Ready to <span class="highlight">Start Arbing?</span></h2>
+    <p class="section-sub">Choose your plan and complete checkout securely using the payment links above.</p>
+    <div class="contact-card fade-up">
+      <div class="contact-icon">💳</div>
+      <h3>Checkout in Seconds</h3>
+      <p>Pick your plan from the pricing section and pay online. Access is automated and your Telegram group invite is delivered right after payment.</p>
+      <a href="#pricing" class="btn-telegram">
+        <span style="font-size:18px;">🚀</span>
+        Go to Pricing
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <p>© 2026 Ghost Arb Bot &nbsp;·&nbsp; A software tool for arbitrage alert monitoring &nbsp;·&nbsp; <a href="#faq" style="color:var(--muted);text-decoration:none;">FAQ</a></p>
+    <p style="margin-top:8px;">⚠️ Always verify odds before placing bets. Gambling can be addictive — please gamble responsibly.</p>
+  </div>
+</footer>
+
+<!-- STICKY CTA -->
+<div class="sticky-cta" id="sticky-cta">
+  <a href="#pricing">🚀 Checkout</a>
+</div>
+
+<script>
+  // ── Stripe payment links (single place to update URLs) ──
+  const PAYMENT_LINKS = {
+    monthly: 'https://buy.stripe.com/bJeaEQ3tH2JT18a7qf2B205',
+    six: 'https://buy.stripe.com/bJe14g7JX0BL046h0P2B203',
+    annual: 'https://buy.stripe.com/7sY5kwaW9acl4km8uj2B202'
+  };
+  function applyPaymentLinks() {
+    var m = document.getElementById('pl-monthly');
+    var s = document.getElementById('pl-six');
+    var a = document.getElementById('pl-annual');
+    if (m && PAYMENT_LINKS.monthly) m.href = PAYMENT_LINKS.monthly;
+    if (s && PAYMENT_LINKS.six) s.href = PAYMENT_LINKS.six;
+    if (a && PAYMENT_LINKS.annual) a.href = PAYMENT_LINKS.annual;
+  }
+  document.addEventListener('DOMContentLoaded', applyPaymentLinks);
+
+  // ── FAQ ──
+  function toggleFaq(el) {
+    const item = el.closest('.faq-item');
+    const isOpen = item.classList.contains('open');
+    document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+    if (!isOpen) item.classList.add('open');
+  }
+
+  function prefersReducedMotion() {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function initStarField() {
+    function rnd(a, b) {
+      return a + Math.random() * (b - a);
+    }
+    function placeStars(container, opts) {
+      if (!container) return;
+      var n = opts.count;
+      var i;
+      var el;
+      var size;
+      var op;
+      var r;
+      var g;
+      var b;
+      var glow;
+      for (i = 0; i < n; i++) {
+        el = document.createElement('span');
+        el.className = 'star-dot';
+        el.style.left = rnd(0, 100) + '%';
+        el.style.top = rnd(0, 100) + '%';
+        size = rnd(opts.sizeMin, opts.sizeMax);
+        el.style.width = size.toFixed(2) + 'px';
+        el.style.height = size.toFixed(2) + 'px';
+        op = rnd(opts.opMin, opts.opMax);
+        r = Math.floor(rnd(210, 255));
+        g = Math.floor(rnd(215, 255));
+        b = Math.floor(rnd(235, 255));
+        el.style.background = 'rgb(' + r + ',' + g + ',' + b + ')';
+        if (opts.glowChance && Math.random() < opts.glowChance) {
+          glow = rnd(0.5, 2.8);
+          el.style.boxShadow =
+            '0 0 ' +
+            glow.toFixed(2) +
+            'px rgba(255,255,255,' +
+            rnd(0.25, 0.75).toFixed(3) +
+            '), 0 0 ' +
+            (glow * 2).toFixed(2) +
+            'px rgba(180,200,255,' +
+            rnd(0.08, 0.22).toFixed(3) +
+            ')';
+        }
+        if (!prefersReducedMotion() && opts.twinkleChance && Math.random() < opts.twinkleChance) {
+          el.classList.add('is-twinkle');
+          el.style.setProperty('--tw-lo', String(Math.max(0.08, op * rnd(0.35, 0.65))));
+          el.style.setProperty('--tw-hi', String(Math.min(1, op * rnd(1.05, 1.9))));
+          el.style.setProperty('--tw-dur', rnd(2.5, 9).toFixed(2) + 's');
+          el.style.animationDelay = rnd(0, 5).toFixed(2) + 's';
+        } else {
+          el.style.opacity = String(op);
+        }
+        container.appendChild(el);
+      }
+    }
+
+    placeStars(document.getElementById('star-field-back'), {
+      count: 130,
+      sizeMin: 0.45,
+      sizeMax: 1.35,
+      opMin: 0.1,
+      opMax: 0.42,
+      glowChance: 0.02,
+      twinkleChance: 0.06,
+    });
+    placeStars(document.getElementById('star-field-mid'), {
+      count: 95,
+      sizeMin: 0.9,
+      sizeMax: 2.35,
+      opMin: 0.18,
+      opMax: 0.58,
+      glowChance: 0.06,
+      twinkleChance: 0.1,
+    });
+    placeStars(document.getElementById('star-field-front'), {
+      count: 62,
+      sizeMin: 1.2,
+      sizeMax: 3.6,
+      opMin: 0.28,
+      opMax: 0.92,
+      glowChance: 0.14,
+      twinkleChance: 0.18,
+    });
+  }
+
+  function initShootingStars() {
+    if (prefersReducedMotion()) return;
+    var stars = document.querySelectorAll('.space-scene .shooting-star');
+    var i;
+    var el;
+    var deg;
+    var rad;
+    var dist;
+    var dx;
+    var dy;
+    for (i = 0; i < stars.length; i++) {
+      el = stars[i];
+      deg = Math.random() * 360;
+      rad = (deg * Math.PI) / 180;
+      dist = 260 + Math.random() * 540;
+      dx = Math.cos(rad) * dist;
+      dy = Math.sin(rad) * dist;
+      el.style.setProperty('--shoot-angle', deg.toFixed(2) + 'deg');
+      el.style.setProperty('--shoot-dx', dx.toFixed(1) + 'px');
+      el.style.setProperty('--shoot-dy', dy.toFixed(1) + 'px');
+      el.style.setProperty('--shoot-dur', (3.8 + Math.random() * 5.2).toFixed(2) + 's');
+      el.style.setProperty('--shoot-delay', (-Math.random() * 14).toFixed(2) + 's');
+      el.style.setProperty('--shoot-top', (4 + Math.random() * 88).toFixed(1) + '%');
+      el.style.setProperty('--shoot-left', (4 + Math.random() * 88).toFixed(1) + '%');
+      el.style.setProperty('--shoot-len', (56 + Math.random() * 48).toFixed(0) + 'px');
+    }
+  }
+
+  var ROCKET_SVGS = [
+    '<svg viewBox="0 0 64 128" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="20" width="24" height="60" fill="#ccc"/><polygon points="32,0 20,20 44,20" fill="#ff4d4d"/><rect x="24" y="80" width="16" height="20" fill="#666"/><polygon points="24,100 32,128 40,100" fill="orange"/><circle cx="32" cy="50" r="6" fill="#4da6ff"/></svg>',
+    '<svg viewBox="0 0 64 128" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="20" width="24" height="60" fill="#ddd"/><polygon points="32,0 20,20 44,20" fill="#9933ff"/><rect x="24" y="80" width="16" height="20" fill="#555"/><polygon points="24,100 32,128 40,100" fill="orange"/><circle cx="32" cy="50" r="6" fill="#66ccff"/></svg>',
+    '<svg viewBox="0 0 64 128" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="20" width="24" height="60" fill="#bbb"/><polygon points="32,0 20,20 44,20" fill="#ff66cc"/><rect x="24" y="80" width="16" height="20" fill="#444"/><polygon points="24,100 32,128 40,100" fill="orange"/><circle cx="32" cy="50" r="6" fill="#99ddff"/></svg>',
+  ];
+
+  var MAX_ROCKETS = 7;
+  var rocketCount = 0;
+
+  function initSpaceRockets() {
+    if (prefersReducedMotion()) return;
+    var layer = document.getElementById('rockets-layer');
+    var tpl = document.getElementById('rocket-tpl');
+    if (!layer || !tpl) return;
+
+    function rnd(a, b) {
+      return a + Math.random() * (b - a);
+    }
+
+    function spawnRocket() {
+      if (rocketCount >= MAX_ROCKETS) return;
+      var w = document.documentElement.clientWidth;
+      var h = document.documentElement.clientHeight;
+      var pad = 36 + Math.random() * 110;
+      var edge = Math.floor(Math.random() * 4);
+      var x;
+      var y;
+      var deg;
+
+      if (edge === 0) {
+        x = -pad;
+        y = rnd(0, h);
+        deg = rnd(-80, 80);
+      } else if (edge === 1) {
+        x = w + pad;
+        y = rnd(0, h);
+        deg = rnd(100, 260);
+      } else if (edge === 2) {
+        x = rnd(0, w);
+        y = -pad;
+        deg = rnd(15, 165);
+      } else {
+        x = rnd(0, w);
+        y = h + pad;
+        deg = rnd(195, 345);
+      }
+
+      var frag = tpl.content.cloneNode(true);
+      var rocket = frag.querySelector('[data-rocket]');
+      var skin = rocket.querySelector('.rocket-skin');
+      if (!rocket || !skin) return;
+      skin.innerHTML = ROCKET_SVGS[Math.floor(Math.random() * ROCKET_SVGS.length)];
+
+      rocket.style.left = x + 'px';
+      rocket.style.top = y + 'px';
+      rocket.style.width = 45 + rnd(0, 48) + 'px';
+
+      var dist = Math.hypot(w, h) * (1.3 + Math.random() * 0.45) + rnd(200, 420);
+      rocket.style.setProperty('--flight-dist', dist + 'px');
+      rocket.style.setProperty('--flight-deg', String(deg));
+      var duration = Math.max(4.2, Math.min(26, dist / rnd(75, 195)));
+      rocket.style.setProperty('--flight-duration', duration + 's');
+
+      rocketCount++;
+      layer.appendChild(rocket);
+
+      requestAnimationFrame(function () {
+        rocket.classList.add('is-flying');
+      });
+
+      rocket.addEventListener('animationend', function onRocketAnimEnd(e) {
+        if (e.animationName !== 'spaceFlyPath') return;
+        rocket.removeEventListener('animationend', onRocketAnimEnd);
+        if (rocket.parentNode) rocket.parentNode.removeChild(rocket);
+        rocketCount--;
+      });
+    }
+
+    function scheduleSpawner() {
+      function tick() {
+        if (prefersReducedMotion()) return;
+        if (rocketCount < MAX_ROCKETS && Math.random() > 0.12) {
+          spawnRocket();
+        }
+        setTimeout(tick, 380 + Math.random() * 2600);
+      }
+      setTimeout(tick, 250 + Math.random() * 400);
+    }
+
+    var initialBursts = 3 + Math.floor(Math.random() * 5);
+    var i;
+    for (i = 0; i < initialBursts; i++) {
+      (function (delay) {
+        setTimeout(function () {
+          if (!prefersReducedMotion()) spawnRocket();
+        }, delay);
+      })(80 + i * 260 + Math.random() * 220);
+    }
+    scheduleSpawner();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    initStarField();
+    initShootingStars();
+    initSpaceRockets();
+  });
+
+  function animateCounter(id, target) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const n = Number(target);
+    if (Number.isNaN(n)) return;
+    if (prefersReducedMotion()) {
+      el.textContent = n.toLocaleString();
+      el.dataset.liveStat = String(n);
+      return;
+    }
+    const prev = parseInt(el.dataset.liveStat || '', 10);
+    const startVal = Number.isNaN(prev) ? 0 : prev;
+    if (n === startVal && el.textContent !== '') {
+      el.textContent = n.toLocaleString();
+      return;
+    }
+    el.dataset.liveStat = String(n);
+    const duration = 1200;
+    const startTime = performance.now();
+    function update(now) {
+      const progress = Math.min((now - startTime) / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      const v = Math.round(startVal + ease * (n - startVal));
+      el.textContent = v.toLocaleString();
+      if (progress < 1) requestAnimationFrame(update);
+      else el.textContent = n.toLocaleString();
+    }
+    requestAnimationFrame(update);
+  }
+
+  // ── LIVE STATS (minimal risk w/ anon key + locked-down view) ──
+  // 1) In Supabase, create a VIEW named `public_stats` that exposes only the stats you want public.
+  // 2) Put your *anon* key below (anon keys are meant to be public).
+  // Paste Project URL + anon public key from Supabase → Project Settings → API (must match your project).
+  const SB_URL = 'https://yhcdhnjbcyvcvfpcvrsm.supabase.co';
+  const SB_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InloY2RobmpiY3l2Y3ZmcGN2cnNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNDY5MTUsImV4cCI6MjA4OTYyMjkxNX0.70L8oi4uPd70CtuNYyRb10mjpQakubN6O9YpDXv3fv8';
+
+  function setStatsLoading(on) {
+    const d = document.getElementById('counter-daily');
+    const t = document.getElementById('counter-total');
+    if (!d || !t) return;
+    if (on) {
+      d.classList.add('is-loading');
+      t.classList.add('is-loading');
+    } else {
+      d.classList.remove('is-loading');
+      t.classList.remove('is-loading');
+    }
+  }
+  let hasLoadedStatsOnce = false;
+
+  async function fetchStats() {
+    const dailyEl = document.getElementById('counter-daily');
+    const totalEl = document.getElementById('counter-total');
+    const msg = document.getElementById('stats-msg');
+    const bar = document.getElementById('stats-status-bar');
+    const retry = document.getElementById('stats-retry-btn');
+    if (!SB_ANON_KEY) {
+      dailyEl.textContent = '—';
+      totalEl.textContent = '—';
+      if (msg) msg.textContent = 'Stats disabled (configure API key in page source).';
+      return;
+    }
+
+    const firstLoad =
+      !hasLoadedStatsOnce &&
+      !dailyEl.dataset.liveStat &&
+      !totalEl.dataset.liveStat;
+    if (firstLoad) setStatsLoading(true);
+    if (msg && firstLoad) {
+      msg.textContent = 'Loading live stats…';
+      if (bar) bar.classList.remove('error');
+    }
+    if (retry) retry.style.display = 'none';
+
+    try {
+      /* PostgREST: only documented params (unknown keys → HTTP 400). No _cb / _t. */
+      const qs = new URLSearchParams({
+        select: 'id,value',
+        order: 'id.asc',
+        limit: '20',
+        offset: '0',
+      });
+      const res = await fetch(SB_URL + '/rest/v1/public_stats?' + qs.toString(), {
+        cache: 'no-store',
+        mode: 'cors',
+        headers: {
+          apikey: SB_ANON_KEY,
+          Authorization: 'Bearer ' + SB_ANON_KEY,
+          Accept: 'application/json',
+          Pragma: 'no-cache',
+        },
+      });
+
+      const rawText = await res.text();
+      let parsed = null;
+      if (rawText) {
+        try {
+          parsed = JSON.parse(rawText);
+        } catch (parseErr) {
+          throw new Error('Bad response (not JSON): ' + String(rawText).slice(0, 120));
+        }
+      }
+
+      if (!res.ok) {
+        let hint =
+          res.status === 401 || res.status === 403
+            ? ' Update SB_ANON_KEY in index.html from Supabase → Settings → API (anon public).'
+            : res.status === 404
+              ? ' Run supabase_rpc.sql so view public_stats exists.'
+              : '';
+        let errMsg = '';
+        if (parsed && typeof parsed === 'object' && parsed.message) {
+          errMsg = String(parsed.message);
+        } else if (parsed && typeof parsed === 'object' && parsed.hint) {
+          errMsg = String(parsed.hint);
+        } else {
+          errMsg = String(rawText || '').slice(0, 200);
+        }
+        throw new Error('HTTP ' + res.status + (errMsg ? ': ' + errMsg : '') + hint);
+      }
+
+      if (!Array.isArray(parsed)) {
+        throw new Error('Unexpected response (expected a JSON array from public_stats).');
+      }
+      const rows = parsed;
+
+      let daily = 0;
+      let total = 0;
+      rows.forEach(function (row) {
+        if (row.id === 'daily_alerts') daily = Number(row.value || 0);
+        if (row.id === 'total_alerts') total = Number(row.value || 0);
+      });
+
+      setStatsLoading(false);
+      hasLoadedStatsOnce = true;
+      if (msg) {
+        if (rows.length === 0) {
+          msg.textContent =
+            'No stats rows — run supabase_rpc.sql and supabase_patch_public_stats_rls.sql in Supabase SQL.';
+        } else if (daily === 0 && total === 0) {
+          msg.textContent =
+            'Live — counts start at 0; they go up when your bot sends an alert (Supabase stats +1 in the monitor log).';
+        } else {
+          msg.textContent = '';
+        }
+      }
+      animateCounter('counter-daily', daily);
+      animateCounter('counter-total', total);
+    } catch (e) {
+      setStatsLoading(false);
+      dailyEl.textContent = '—';
+      totalEl.textContent = '—';
+      const errStr = e && e.message ? e.message : String(e);
+      if (msg) {
+        if (errStr.indexOf('Failed to fetch') !== -1 || errStr.indexOf('NetworkError') !== -1) {
+          msg.textContent =
+            'Cannot reach Supabase (network, offline, or browser blocked the request). If testing from a local file, use a local server or GitHub Pages — not file://.';
+        } else {
+          msg.textContent = 'Stats: ' + errStr;
+        }
+      }
+      if (bar) bar.classList.add('error');
+      if (retry) retry.style.display = 'inline-block';
+      if (typeof console !== 'undefined' && console.error) {
+        console.error('Ghost Arb live stats fetch failed:', errStr);
+      }
+    }
+  }
+
+  (function () {
+    const retryBtn = document.getElementById('stats-retry-btn');
+    if (retryBtn) retryBtn.addEventListener('click', fetchStats);
+  })();
+  fetchStats();
+  setInterval(fetchStats, 5000);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') fetchStats();
+  });
+
+  // ── SCROLL FADE ──
+  if (prefersReducedMotion()) {
+    document.querySelectorAll('.fade-up').forEach(function (el) { el.classList.add('visible'); });
+  } else {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+  }
+
+  // ── STICKY CTA ──
+  const heroSection = document.querySelector('.hero');
+  const stickyCta = document.getElementById('sticky-cta');
+  window.addEventListener('scroll', () => {
+    if (heroSection) {
+      stickyCta.classList.toggle('show', heroSection.getBoundingClientRect().bottom < 0);
+    }
+  }, { passive: true });
+
+  // ── PROFIT CALCULATOR ──
+  function updateCalc() {
+    const stake = parseFloat(document.getElementById('stake-slider').value);
+    const profit = parseFloat(document.getElementById('profit-slider').value);
+    const bets = parseInt(document.getElementById('bets-slider').value);
+    document.getElementById('stake-val').textContent = '£' + stake.toLocaleString();
+    document.getElementById('profit-val').textContent = profit + '%';
+    document.getElementById('bets-val').textContent = bets;
+    const perBet = stake * (profit / 100);
+    const perDay = perBet * bets;
+    const perMonth = perDay * 30;
+    document.getElementById('res-bet').textContent = '£' + perBet.toFixed(2);
+    document.getElementById('res-day').textContent = '£' + perDay.toFixed(2);
+    document.getElementById('res-month').textContent = '£' + Math.round(perMonth).toLocaleString();
+  }
+  updateCalc();
+
+  // ── HOMEMADE ODDS CALCULATOR ──
+  function parseOdd(raw, format) {
+    if (!raw) return NaN;
+    const value = String(raw).trim();
+
+    if (format === 'decimal') {
+      const dec = parseFloat(value);
+      return Number.isFinite(dec) && dec > 1 ? dec : NaN;
+    }
+
+    const parts = value.split('/');
+    if (parts.length !== 2) return NaN;
+    const num = parseFloat(parts[0]);
+    const den = parseFloat(parts[1]);
+    if (!Number.isFinite(num) || !Number.isFinite(den) || den <= 0) return NaN;
+    return num / den + 1;
+  }
+
+  function updateOddsCalc() {
+    const format = document.getElementById('odds-format').value;
+    const a = parseOdd(document.getElementById('odd-a').value, format);
+    const b = parseOdd(document.getElementById('odd-b').value, format);
+    const resultEl = document.getElementById('odds-result');
+
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
+      resultEl.innerHTML = 'Please enter valid odds. Decimal examples: <b>1.95</b>, <b>2.20</b>. Fractional examples: <b>19/20</b>, <b>6/5</b>.';
+      return;
+    }
+
+    const inv = (1 / a) + (1 / b);
+    const implied = inv * 100;
+    const totalStake = 100;
+    const stakeA = (totalStake / a) / inv;
+    const stakeB = (totalStake / b) / inv;
+    const payout = totalStake / inv;
+    const profit = payout - totalStake;
+    const profitPct = (profit / totalStake) * 100;
+    const statusClass = inv < 1 ? 'good' : 'bad';
+    const statusText = inv < 1 ? 'Arbitrage found' : 'No arbitrage';
+
+    resultEl.innerHTML =
+      'Implied probability: <b>' + implied.toFixed(2) + '%</b><br>' +
+      'Status: <span class="' + statusClass + '">' + statusText + '</span><br>' +
+      'Split for £100 total stake: <b>£' + stakeA.toFixed(2) + '</b> on Side A and <b>£' + stakeB.toFixed(2) + '</b> on Side B<br>' +
+      'Projected return: <b>£' + payout.toFixed(2) + '</b> (' +
+      (profit >= 0 ? '+' : '') + '<b>£' + profit.toFixed(2) + '</b>, ' +
+      (profitPct >= 0 ? '+' : '') + profitPct.toFixed(2) + '%)';
+  }
+
+  updateOddsCalc();
+</script>
+</body>
+</html>
